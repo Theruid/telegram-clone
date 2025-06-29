@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase';
 import { Contact, Chat, Message } from '../types';
 import { UserPlus, Search, Circle } from 'lucide-react';
 import AddContactModal from './AddContactModal';
+import { useNotifications } from '../hooks/useNotifications';
 
 interface ContactListProps {
   currentUserId: string;
@@ -17,6 +18,14 @@ export default function ContactList({ currentUserId, activeChat, onChatSelect, c
   const [showAddModal, setShowAddModal] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const { showNotification, requestPermission, permission } = useNotifications();
+
+  // Request notification permission on component mount
+  useEffect(() => {
+    if (permission === 'default') {
+      requestPermission();
+    }
+  }, [permission, requestPermission]);
 
   const loadContacts = async () => {
     try {
@@ -111,59 +120,86 @@ export default function ContactList({ currentUserId, activeChat, onChatSelect, c
     loadChats();
   }, [contacts]);
 
-  // Subscribe to new messages and profile updates
+  // Subscribe to real-time changes
   useEffect(() => {
     if (!currentUserId) return;
 
-    const messagesChannel = supabase
-      .channel('messages_channel')
-      .on('postgres_changes', 
-        { 
-          event: 'INSERT', 
-          schema: 'public', 
-          table: 'messages'
-        }, 
-        (payload) => {
-          console.log('New message received:', payload);
-          // Reload chats when any new message is inserted
-          loadChats();
-        }
-      )
-      .on('postgres_changes', 
-        { 
-          event: 'UPDATE', 
-          schema: 'public', 
-          table: 'messages'
-        }, 
-        (payload) => {
-          console.log('Message updated:', payload);
-          // Reload chats when message is updated (e.g., read status)
-          loadChats();
-        }
-      )
-      .subscribe();
+    console.log('Setting up real-time subscriptions for user:', currentUserId);
 
-    const profilesChannel = supabase
-      .channel('profiles_channel')
-      .on('postgres_changes', 
-        { 
-          event: 'UPDATE', 
-          schema: 'public', 
-          table: 'profiles'
-        }, 
-        (payload) => {
-          console.log('Profile updated:', payload);
-          // Reload contacts when profile is updated (e.g., online status)
-          loadContacts();
+    // Subscribe to messages
+    const messagesChannel = supabase
+      .channel('public:messages')
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'messages',
+          filter: `or(sender_id.eq.${currentUserId},receiver_id.eq.${currentUserId})`
+        },
+        async (payload) => {
+          console.log('New message received:', payload);
+          
+          const newMessage = payload.new as Message;
+          
+          // Show notification if message is from someone else
+          if (newMessage.sender_id !== currentUserId) {
+            const senderContact = contacts.find(c => c.contact_id === newMessage.sender_id);
+            if (senderContact) {
+              showNotification({
+                title: `New message from ${senderContact.profile.display_name}`,
+                body: newMessage.content,
+                tag: `message-${newMessage.id}`
+              });
+            }
+          }
+          
+          // Reload chats to update UI
+          await loadChats();
         }
       )
-      .subscribe();
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'messages',
+          filter: `or(sender_id.eq.${currentUserId},receiver_id.eq.${currentUserId})`
+        },
+        async (payload) => {
+          console.log('Message updated:', payload);
+          await loadChats();
+        }
+      )
+      .subscribe((status) => {
+        console.log('Messages subscription status:', status);
+      });
+
+    // Subscribe to profile updates (online status)
+    const profilesChannel = supabase
+      .channel('public:profiles')
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'profiles'
+        },
+        async (payload) => {
+          console.log('Profile updated:', payload);
+          await loadContacts();
+        }
+      )
+      .subscribe((status) => {
+        console.log('Profiles subscription status:', status);
+      });
 
     return () => {
+      console.log('Cleaning up subscriptions');
       supabase.removeChannel(messagesChannel);
       supabase.removeChannel(profilesChannel);
     };
-  }, [currentUserId, contacts.length]);
+  }, [currentUserId, contacts, showNotification]);
 
   const formatTime = (dateString: string) => {
     const date = new Date(dateString);

@@ -21,6 +21,26 @@ export default function ChatArea({ chat, currentUserId, onSendMessage }: ChatAre
     scrollToBottom();
   }, [chat?.messages]);
 
+  // Mark messages as read when chat is opened
+  useEffect(() => {
+    if (chat && chat.messages.length > 0) {
+      const unreadMessages = chat.messages.filter(
+        msg => msg.receiver_id === currentUserId && !msg.is_read
+      );
+      
+      if (unreadMessages.length > 0) {
+        // Mark messages as read
+        import('../lib/supabase').then(({ supabase }) => {
+          supabase
+            .from('messages')
+            .update({ is_read: true })
+            .in('id', unreadMessages.map(msg => msg.id))
+            .eq('receiver_id', currentUserId);
+        });
+      }
+    }
+  }, [chat, currentUserId]);
+
   if (!chat) {
     return (
       <div className="flex-1 flex items-center justify-center bg-gray-50">

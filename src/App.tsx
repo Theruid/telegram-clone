@@ -83,6 +83,8 @@ function App() {
       }
 
       console.log('Message sent successfully:', data);
+      
+      // The real-time subscription will handle updating the UI
     } catch (error) {
       console.error('Error sending message:', error);
     }
@@ -100,7 +102,7 @@ function App() {
     await supabase.auth.signOut();
   };
 
-  // Update online status on window focus/blur
+  // Update online status on window focus/blur and beforeunload
   useEffect(() => {
     if (!user) return;
 
@@ -120,9 +122,18 @@ function App() {
 
     const handleBeforeUnload = () => {
       // Use sendBeacon for more reliable offline status update
-      navigator.sendBeacon('/api/offline', JSON.stringify({ userId: user.id }));
+      const data = JSON.stringify({
+        user_id: user.id,
+        is_online: false,
+        last_seen: new Date().toISOString()
+      });
       
-      // Fallback to regular update
+      // Try sendBeacon first, fallback to regular update
+      if (navigator.sendBeacon) {
+        navigator.sendBeacon('/api/offline', data);
+      }
+      
+      // Synchronous update as fallback
       supabase
         .from('profiles')
         .update({ is_online: false, last_seen: new Date().toISOString() })
@@ -133,10 +144,22 @@ function App() {
     window.addEventListener('blur', handleBlur);
     window.addEventListener('beforeunload', handleBeforeUnload);
 
+    // Also handle page visibility changes
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        handleFocus();
+      } else {
+        handleBlur();
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
     return () => {
       window.removeEventListener('focus', handleFocus);
       window.removeEventListener('blur', handleBlur);
       window.removeEventListener('beforeunload', handleBeforeUnload);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
   }, [user]);
 
