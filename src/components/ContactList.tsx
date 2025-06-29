@@ -77,12 +77,22 @@ export default function ContactList({ currentUserId, activeChat, onChatSelect, c
       });
 
       const chatData = await Promise.all(chatPromises);
-      setChats(chatData.sort((a, b) => {
+      const sortedChats = chatData.sort((a, b) => {
         if (!a.lastMessage && !b.lastMessage) return 0;
         if (!a.lastMessage) return 1;
         if (!b.lastMessage) return -1;
         return new Date(b.lastMessage.created_at).getTime() - new Date(a.lastMessage.created_at).getTime();
-      }));
+      });
+      
+      setChats(sortedChats);
+      
+      // Update active chat if it exists
+      if (activeChat) {
+        const updatedActiveChat = sortedChats.find(chat => chat.contact.id === activeChat.contact.id);
+        if (updatedActiveChat) {
+          onChatSelect(updatedActiveChat);
+        }
+      }
     } catch (error) {
       console.error('Error loading chats:', error);
       setError('Failed to load chats');
@@ -101,29 +111,59 @@ export default function ContactList({ currentUserId, activeChat, onChatSelect, c
     loadChats();
   }, [contacts]);
 
-  // Subscribe to new messages
+  // Subscribe to new messages and profile updates
   useEffect(() => {
     if (!currentUserId) return;
 
-    const channel = supabase
-      .channel('messages')
+    const messagesChannel = supabase
+      .channel('messages_channel')
       .on('postgres_changes', 
         { 
           event: 'INSERT', 
           schema: 'public', 
-          table: 'messages',
-          filter: `or(sender_id.eq.${currentUserId},receiver_id.eq.${currentUserId})`
+          table: 'messages'
         }, 
-        () => {
+        (payload) => {
+          console.log('New message received:', payload);
+          // Reload chats when any new message is inserted
+          loadChats();
+        }
+      )
+      .on('postgres_changes', 
+        { 
+          event: 'UPDATE', 
+          schema: 'public', 
+          table: 'messages'
+        }, 
+        (payload) => {
+          console.log('Message updated:', payload);
+          // Reload chats when message is updated (e.g., read status)
           loadChats();
         }
       )
       .subscribe();
 
+    const profilesChannel = supabase
+      .channel('profiles_channel')
+      .on('postgres_changes', 
+        { 
+          event: 'UPDATE', 
+          schema: 'public', 
+          table: 'profiles'
+        }, 
+        (payload) => {
+          console.log('Profile updated:', payload);
+          // Reload contacts when profile is updated (e.g., online status)
+          loadContacts();
+        }
+      )
+      .subscribe();
+
     return () => {
-      supabase.removeChannel(channel);
+      supabase.removeChannel(messagesChannel);
+      supabase.removeChannel(profilesChannel);
     };
-  }, [currentUserId, contacts]);
+  }, [currentUserId, contacts.length]);
 
   const formatTime = (dateString: string) => {
     const date = new Date(dateString);

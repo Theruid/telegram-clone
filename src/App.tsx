@@ -61,15 +61,28 @@ function App() {
     if (!activeChat || !user) return;
 
     try {
-      const { error } = await supabase
+      console.log('Sending message:', {
+        sender_id: user.id,
+        receiver_id: activeChat.contact.contact_id,
+        content
+      });
+
+      const { data, error } = await supabase
         .from('messages')
         .insert({
           sender_id: user.id,
           receiver_id: activeChat.contact.contact_id,
           content,
-        });
+        })
+        .select()
+        .single();
 
-      if (error) throw error;
+      if (error) {
+        console.error('Error sending message:', error);
+        throw error;
+      }
+
+      console.log('Message sent successfully:', data);
     } catch (error) {
       console.error('Error sending message:', error);
     }
@@ -105,19 +118,35 @@ function App() {
         .eq('id', user.id);
     };
 
+    const handleBeforeUnload = () => {
+      // Use sendBeacon for more reliable offline status update
+      navigator.sendBeacon('/api/offline', JSON.stringify({ userId: user.id }));
+      
+      // Fallback to regular update
+      supabase
+        .from('profiles')
+        .update({ is_online: false, last_seen: new Date().toISOString() })
+        .eq('id', user.id);
+    };
+
     window.addEventListener('focus', handleFocus);
     window.addEventListener('blur', handleBlur);
+    window.addEventListener('beforeunload', handleBeforeUnload);
 
     return () => {
       window.removeEventListener('focus', handleFocus);
       window.removeEventListener('blur', handleBlur);
+      window.removeEventListener('beforeunload', handleBeforeUnload);
     };
   }, [user]);
 
   if (loading) {
     return (
       <div className="h-screen bg-gray-100 flex items-center justify-center">
-        <div className="text-gray-500">Loading...</div>
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#0088cc] mx-auto mb-4"></div>
+          <div className="text-gray-500">Loading...</div>
+        </div>
       </div>
     );
   }
@@ -143,7 +172,7 @@ function App() {
       {/* Sign out button */}
       <button
         onClick={handleSignOut}
-        className="absolute top-4 right-4 px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors text-sm"
+        className="absolute top-4 right-4 px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors text-sm z-10"
       >
         Sign Out
       </button>

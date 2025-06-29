@@ -45,18 +45,18 @@ export default function ChatArea({ chat, currentUserId, onSendMessage }: ChatAre
           <div className="flex items-center space-x-3">
             <div className="relative">
               <img
-                src={otherUser.avatar_url}
-                alt={otherUser.display_name}
+                src={otherUser?.avatar_url || 'https://images.pexels.com/photos/1239291/pexels-photo-1239291.jpeg?auto=compress&cs=tinysrgb&w=150&h=150&dpr=2'}
+                alt={otherUser?.display_name || 'User'}
                 className="w-10 h-10 rounded-full"
               />
-              {otherUser.is_online && (
+              {otherUser?.is_online && (
                 <div className="absolute -bottom-1 -right-1 w-3 h-3 bg-green-500 border-2 border-white rounded-full"></div>
               )}
             </div>
             <div>
-              <h2 className="font-semibold text-gray-900">{otherUser.display_name}</h2>
+              <h2 className="font-semibold text-gray-900">{otherUser?.display_name || 'User'}</h2>
               <p className="text-sm text-gray-500">
-                {otherUser.is_online ? 'Online' : `Last seen ${new Date(otherUser.last_seen).toLocaleString()}`}
+                {otherUser?.is_online ? 'Online' : otherUser?.last_seen ? `Last seen ${new Date(otherUser.last_seen).toLocaleString()}` : 'Offline'}
               </p>
             </div>
           </div>
@@ -77,14 +77,23 @@ export default function ChatArea({ chat, currentUserId, onSendMessage }: ChatAre
 
       {/* Messages */}
       <div className="flex-1 overflow-y-auto p-4 space-y-1">
-        {chat.messages.map((message) => (
-          <MessageBubble
-            key={message.id}
-            message={message}
-            isCurrentUser={message.sender_id === currentUserId}
-            otherUser={otherUser}
-          />
-        ))}
+        {chat.messages && chat.messages.length > 0 ? (
+          chat.messages.map((message) => (
+            <MessageBubble
+              key={message.id}
+              message={message}
+              isCurrentUser={message.sender_id === currentUserId}
+              otherUser={otherUser}
+            />
+          ))
+        ) : (
+          <div className="flex items-center justify-center h-full">
+            <div className="text-center text-gray-500">
+              <p>No messages yet</p>
+              <p className="text-sm">Send a message to start the conversation</p>
+            </div>
+          </div>
+        )}
         <div ref={messagesEndRef} />
       </div>
 
